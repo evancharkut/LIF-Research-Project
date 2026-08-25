@@ -1,0 +1,36 @@
+# Secrets / credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials/
+
+# Personal / local config
+*.local
+config.local.*
+
+# Logs
+*.log
+logs/
+
+# MATLAB
+*.asv
+*.m~
+*.mex*
+*.mat
+slprj/
+codegen/
+
+# Course material — do not publish the assignment brief or supplied data
+Coding project.docx
+*.docx
+data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Packaged snapshots of this repo
+*.zip
