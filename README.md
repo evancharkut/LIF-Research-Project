@@ -76,6 +76,39 @@ drifts slowly near threshold.
 
 ![frozen noise raster](figures/frozen_noise_raster.png)
 
+## Jitter and reliability
+
+Spikes pooled across trials are grouped into **events**: a peri-stimulus time
+histogram bin holding at least 10% of the trials seeds an event, which is then
+grown outwards over contiguous non-empty bins. For each event,
+
+- **reliability** = fraction of trials that contributed a spike,
+- **jitter** = standard deviation of the spike times within it.
+
+An event in which any single trial fired more than once is discarded rather than
+counted — its spread would measure the interval between two spikes instead of the
+trial-to-trial jitter of one. Events below 50% reliability are still returned
+per-event but left out of the summary means.
+
+`lif_jitter_reliability` sweeps the leak conductance (`R_m = R_0/leak`, so
+`leak = 1` is the default cell) and reports rate, jitter and reliability at each
+value.
+
+The event-finding rule is the one from Billimoria et al. (2006), lifted from an
+earlier implementation. Two things were changed in the port: the "fired twice in
+one event" test now uses a recorded trial index per spike rather than matching
+floating-point spike times with `intersect`, and `hist` was replaced by
+`histcounts`/`discretize`.
+
+Validated against synthetic rasters with known event times, jitter and
+reliability: recovered reliabilities are exact, and recovered jitter matches the
+sample standard deviation of the spikes drawn into each event. Note that jitter
+from 10 trials is a noisy statistic — the standard deviation of a sample standard
+deviation at *n* = 10 is `sigma/sqrt(2(n-1))`, about 0.19 ms for a 0.8 ms event —
+which is why the original averaged over repeated simulations.
+
+![jitter and reliability](figures/jitter_reliability.png)
+
 ## Files
 
 | file | what it does |
@@ -86,6 +119,8 @@ drifts slowly near threshold.
 | `lif_fI_curve.m` | firing rate vs. DC amplitude, with the analytic overlay |
 | `filtered_noise.m` | stimulus generator: white noise, 4th-order Butterworth low-pass, scaled to a target rms with a DC offset |
 | `lif_filtered_noise.m` | frozen-noise drive, spike raster across repeated trials |
+| `spike_events.m` | groups spikes across trials into events; jitter and reliability per event |
+| `lif_jitter_reliability.m` | jitter and reliability vs. leak conductance |
 | `make_figures.m` | regenerates the figures in `figures/` |
 
 ## Running it
@@ -98,6 +133,7 @@ cd lif-neuron-model
 lif_dc              % step response
 lif_fI_curve        % validation against theory
 lif_filtered_noise  % frozen-noise raster
+lif_jitter_reliability  % jitter/reliability vs. leak
 make_figures        % regenerate figures/
 ```
 
@@ -122,9 +158,6 @@ spike height, so the drawn spike cannot feed back into the dynamics.
 
 ## In progress
 
-- **Jitter and reliability** — cluster raster spikes into events, then compute
-  reliability as the fraction of trials containing an event and jitter as the
-  standard deviation of spike times within it.
 - **Information transfer** — the direct method of Strong et al. (1998): binarise
   spike trains into words of length L, take total entropy across all trials and
   noise entropy from across-trial variability at fixed time, and take the

@@ -4,9 +4,11 @@ function make_figures()
 
 if ~exist('figures', 'dir'), mkdir('figures'); end
 
-scripts = {'lif_dc', 'lif_fI_curve', 'lif_filtered_noise'};
-fignums = [1 2 3];
-names   = {'dc_step', 'fI_curve', 'frozen_noise_raster'};
+scripts = {'lif_dc', 'lif_fI_curve', 'lif_filtered_noise', ...
+           'lif_jitter_reliability'};
+fignums = [1 2 3 4];
+names   = {'dc_step', 'fI_curve', 'frozen_noise_raster', ...
+           'jitter_reliability'};
 
 for idx = 1:numel(scripts)
     export_one(scripts{idx}, fignums(idx), ...
