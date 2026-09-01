@@ -122,6 +122,7 @@ which is why the original averaged over repeated simulations.
 | `spike_events.m` | groups spikes across trials into events; jitter and reliability per event |
 | `lif_jitter_reliability.m` | jitter and reliability vs. leak conductance |
 | `make_figures.m` | regenerates the figures in `figures/` |
+| `check_setup.m` | preflight: shadowed built-ins, toolbox, duplicate files on the path |
 
 ## Running it
 
@@ -129,7 +130,8 @@ MATLAB R2020b or later. `filtered_noise.m` uses `butter` and `filtfilt` from the
 Signal Processing Toolbox; `make_figures.m` uses `exportgraphics`.
 
 ```matlab
-cd lif-neuron-model
+cd LIF-Research-Project
+check_setup         % verify the path and toolbox first
 lif_dc              % step response
 lif_fI_curve        % validation against theory
 lif_filtered_noise  % frozen-noise raster
