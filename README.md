@@ -67,6 +67,8 @@ rates — at 10 nA the gap shrinks from 1.4 Hz at `dt = 0.05 ms` to 0.03 Hz at
 
 ![f-I curve](figures/fI_curve.png)
 
+![dt convergence](figures/dt_convergence.png)
+
 ## Frozen-noise raster
 
 For the timing analysis the same band-limited noise stimulus is presented on every
@@ -123,6 +125,7 @@ which is why the original averaged over repeated simulations.
 | `lif_jitter_reliability.m` | jitter and reliability vs. leak conductance |
 | `make_figures.m` | regenerates the figures in `figures/` |
 | `check_setup.m` | preflight: shadowed built-ins, toolbox, duplicate files on the path |
+| `python/` | one-for-one Python port; regenerates `figures/` without MATLAB |
 
 ## Running it
 
@@ -138,6 +141,17 @@ lif_filtered_noise  % frozen-noise raster
 lif_jitter_reliability  % jitter/reliability vs. leak
 make_figures        % regenerate figures/
 ```
+
+The figures in this README were produced by the Python port, which needs only
+NumPy, SciPy and Matplotlib:
+
+```bash
+python3 python/make_figures.py
+```
+
+It reproduces every deterministic result above exactly; see
+[python/README.md](python/README.md) for the comparison and for the two places
+the two languages cannot agree.
 
 ## Notes on the original code
 
