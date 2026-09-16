@@ -46,7 +46,8 @@ end
 
 % 3. duplicate project files on the path ---------------------------------
 here = pwd;
-for fn = {'lif_run', 'lif_params', 'filtered_noise', 'spike_events'}
+for fn = {'lif_run', 'lif_params', 'filtered_noise', 'spike_events', ...
+          'spike_bits', 'spike_entropy', 'shift_trials'}
     hits = which(fn{1}, '-all');
     if isempty(hits)
         problems = problems + 1;

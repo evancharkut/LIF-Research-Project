@@ -306,3 +306,234 @@ def spike_events(spikes_by_trial, t_end, binwidth=0.5, t_start=1000.0,
 
     return Events(ev_time, ev_jit, ev_rel, jitter_mean, reliability_mean,
                   n_multiple, ev_time.size, rate)
+
+
+# --------------------------------------------------------------------------
+# spike_bits.m
+# --------------------------------------------------------------------------
+def spike_bits(spikes_by_trial, t_end, t_bin=1.0):
+    """Binarise spike trains into a trials x bins 0/1 matrix.
+
+    spikes_by_trial  list of spike-time vectors, one per trial, or a single
+                     vector for a one-trial run                      [ms]
+    t_end            trial duration                                  [ms]
+    t_bin            bin width                                       [ms]
+
+    Returns (bits, n_merged). Bin k covers ((k-1)*t_bin, k*t_bin], matching
+    ceil(t/t_bin), and a trailing partial bin is dropped.
+
+    n_merged counts spikes that landed in an already-occupied bin. The direct
+    method assumes a bin is small enough to hold at most one spike; with an
+    absolute refractory period of t_ref the safe choice is t_bin <= t_ref, and
+    n_merged > 0 says that choice has been broken and the words no longer
+    carry the full spike count.
+    """
+    if isinstance(spikes_by_trial, np.ndarray) or not isinstance(
+            spikes_by_trial, (list, tuple)):
+        spikes_by_trial = [spikes_by_trial]
+
+    n_trials = len(spikes_by_trial)
+    n_bins = int(np.floor(t_end / t_bin))
+    if n_bins < 1:
+        raise ValueError(
+            f"t_bin ({t_bin} ms) is larger than t_end ({t_end} ms)."
+        )
+
+    bits = np.zeros((n_trials, n_bins), dtype=np.uint8)
+    n_merged = 0
+    for k, st in enumerate(spikes_by_trial):
+        st = np.asarray(st, dtype=float).ravel()
+        st = st[(st > 0) & (st <= n_bins * t_bin)]
+        idx = np.maximum(1, np.ceil(st / t_bin).astype(int)) - 1
+        n_merged += idx.size - np.unique(idx).size
+        bits[k, idx] = 1
+    return bits, n_merged
+
+
+# --------------------------------------------------------------------------
+# spike_entropy.m
+# --------------------------------------------------------------------------
+@dataclass
+class Entropy:
+    L: np.ndarray                # word length                        [bins]
+    T: np.ndarray                # word duration                      [s]
+    rate: float                  # mean firing rate                   [Hz]
+    n_trials: int
+    t_bin: float
+    H_total: np.ndarray          # total entropy rate                 [bits/s]
+    H_noise: np.ndarray          # noise entropy rate                 [bits/s]
+    info: np.ndarray             # H_total - H_noise                  [bits/s]
+    H_total_naive: np.ndarray    # before the finite-sample correction
+    H_noise_naive: np.ndarray
+    n_words: np.ndarray          # samples behind each total-entropy estimate
+    n_seen: np.ndarray           # distinct words actually observed
+
+    @property
+    def inv_L(self):
+        return 1.0 / self.L
+
+    def per_spike(self, field):
+        """A rate in bits/s expressed in bits per spike."""
+        return getattr(self, field) / self.rate
+
+
+def _ent_cols(X):
+    """Plug-in entropy of each column of X, in bits.
+
+    Each of the c members of a group of identical entries contributes
+    -(1/n)*log2(c/n), so the group as a whole contributes -(c/n)*log2(c/n) --
+    which is the plug-in sum -sum p*log2(p). Summing over elements instead of
+    over groups is what lets this be done without a Python loop.
+    """
+    X = X.reshape(X.shape[0], -1)
+    n, m = X.shape
+    if n < 2:
+        return np.zeros(m)
+    Z = np.sort(X, axis=0)
+    new = np.empty(Z.shape, dtype=bool)
+    new[0] = True
+    new[1:] = Z[1:] != Z[:-1]
+    g = np.cumsum(new, axis=0) - 1                  # 0-based group index
+    lin = g + np.arange(m) * n                      # into an n x m count grid
+    counts = np.bincount(lin.ravel(), minlength=n * m)
+    c = counts[lin]                                 # group size of each element
+    return -np.sum(np.log2(c / n), axis=0) / n
+
+
+def _word_ids(bits, L, overlap=True):
+    """Each length-L binary word as one integer, trials x start positions."""
+    n_bins = bits.shape[1]
+    n_pos = n_bins - L + 1
+    if n_pos < 1:
+        raise ValueError(f"word length {L} exceeds the {n_bins} bins available")
+    ids = np.zeros((bits.shape[0], n_pos), dtype=np.int64)
+    for k in range(L):
+        ids = ids * 2 + bits[:, k:k + n_pos]
+    return ids if overlap else ids[:, ::L]
+
+
+def _extrap(H_list, N_list, H_full):
+    """Intercept of a straight line through entropy vs. 1/sample-count."""
+    if len(H_list) < 2:
+        return H_full
+    return float(np.polyfit(1.0 / np.asarray(N_list, float),
+                            np.asarray(H_list, float), 1)[1])
+
+
+def _extrap_samples(v, n_fractions):
+    """Total entropy extrapolated to an infinite number of words."""
+    N = v.size
+    H_list, N_list = [], []
+    for j in range(n_fractions):
+        m = 2 ** j                                  # disjoint contiguous blocks
+        blk = N // m
+        if blk < 2:
+            break
+        h = [_ent_cols(v[b * blk:(b + 1) * blk, None])[0] for b in range(m)]
+        H_list.append(float(np.mean(h)))
+        N_list.append(blk)
+    return _extrap(H_list, N_list, _ent_cols(v[:, None])[0])
+
+
+def _extrap_trials(ids, n_fractions):
+    """Noise entropy extrapolated to an infinite number of trials."""
+    n = ids.shape[0]
+    H_list, N_list = [], []
+    for j in range(n_fractions):
+        m = 2 ** j                                  # disjoint groups of trials
+        sz = n // m
+        if sz < 2:
+            break
+        h = [_ent_cols(ids[b * sz:(b + 1) * sz, :]).mean() for b in range(m)]
+        H_list.append(float(np.mean(h)))
+        N_list.append(sz)
+    return _extrap(H_list, N_list, float(_ent_cols(ids).mean()))
+
+
+def spike_entropy(bits, t_bin, L_list, overlap=True, extrapolate=True,
+                  n_fractions=3):
+    """Total and noise entropy of binarised spike trains (the direct method).
+
+    bits         trials x bins 0/1 matrix from spike_bits
+    t_bin        bin width                                            [ms]
+    L_list       word lengths to try                                  [bins]
+    overlap      take a word at every bin (True) or at every L-th bin
+    extrapolate  correct the finite-sample bias by estimating the entropy on
+                 fractions of the data and extrapolating to infinite data
+    n_fractions  how many fractions (1, 1/2, 1/4, ...) to use
+
+    Total entropy is the entropy of the word distribution pooled over every
+    start time and every trial: how much variety the spike train has.
+
+    Noise entropy holds the time fixed and looks across trials -- at each start
+    time the words from the different trials form one distribution, its entropy
+    is what the neuron does *not* pin down given the stimulus, and the average
+    over start times is the noise entropy. This is the piece that needs many
+    trials of the same frozen stimulus, and it is the piece that is zero when
+    every trial is identical.
+
+    Information = total - noise, extrapolated to 1/L -> 0 by the caller.
+
+    Both are divided by the word duration and reported as rates in bits/s.
+    """
+    bits = np.asarray(bits)
+    if bits.ndim == 1:
+        bits = bits[None, :]
+    bits = (bits != 0).astype(np.int64)
+    n_trials, n_bins = bits.shape
+
+    L_list = np.atleast_1d(np.asarray(L_list, dtype=int))
+    rate = 1000.0 * bits.sum() / (n_trials * n_bins * t_bin)
+
+    nL = L_list.size
+    out = {k: np.full(nL, np.nan) for k in
+           ("H_total", "H_noise", "H_total_naive", "H_noise_naive")}
+    n_words = np.zeros(nL, dtype=np.int64)
+    n_seen = np.zeros(nL, dtype=np.int64)
+
+    for m, L in enumerate(L_list):
+        ids = _word_ids(bits, int(L), overlap)
+        T = L * t_bin / 1000.0                       # word duration [s]
+
+        # --- total entropy: every word, every trial, every start time ---
+        pooled = ids.ravel()
+        n_words[m] = pooled.size
+        n_seen[m] = np.unique(pooled).size
+        Ht_naive = float(_ent_cols(pooled[:, None])[0])
+        Ht = _extrap_samples(pooled, n_fractions) if extrapolate else Ht_naive
+
+        # --- noise entropy: across trials at fixed time, averaged over time --
+        if n_trials > 1:
+            Hn_naive = float(_ent_cols(ids).mean())
+            Hn = (_extrap_trials(ids, n_fractions)
+                  if extrapolate and n_trials >= 4 else Hn_naive)
+        else:
+            Hn_naive = Hn = np.nan
+
+        out["H_total"][m] = Ht / T
+        out["H_noise"][m] = Hn / T
+        out["H_total_naive"][m] = Ht_naive / T
+        out["H_noise_naive"][m] = Hn_naive / T
+
+    return Entropy(L=L_list.astype(float), T=L_list * t_bin / 1000.0,
+                   rate=rate, n_trials=n_trials, t_bin=t_bin,
+                   info=out["H_total"] - out["H_noise"], n_words=n_words,
+                   n_seen=n_seen, **out)
+
+
+def shift_trials(bits, rng=None):
+    """Circularly shift each trial by a random amount.
+
+    A control for the direct method. The shift destroys the time-locking
+    between trials, so the true information in the shifted raster is zero,
+    while each trial keeps its own spike count and word statistics exactly.
+    Whatever information the estimator still reports is its finite-sample
+    floor for that number of trials and that word length.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+    bits = np.asarray(bits)
+    out = np.empty_like(bits)
+    for k in range(bits.shape[0]):
+        out[k] = np.roll(bits[k], int(rng.integers(bits.shape[1])))
+    return out

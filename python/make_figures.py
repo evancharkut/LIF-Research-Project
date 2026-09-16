@@ -17,7 +17,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from lif import filtered_noise, fI_theory, lif_params, lif_run, spike_events
+from lif import (filtered_noise, fI_theory, lif_params, lif_run, shift_trials,
+                 spike_bits, spike_entropy, spike_events)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIGDIR = os.path.join(os.path.dirname(HERE), "figures")
@@ -261,9 +262,116 @@ def jitter_reliability():
     save(fig, "jitter_reliability.png")
 
 
+# --------------------------------------------------------------------------
+# lif_information.m -- total entropy, noise entropy, information
+# --------------------------------------------------------------------------
+def information():
+    rng = np.random.default_rng(5)
+
+    dt = 0.1                        # [ms] converged; see the f-I validation
+    t_bin = 1.0                     # [ms] one bin holds at most one spike here
+    t_start = 1000.0                # [ms] discard the settling transient
+    L_list = np.array([4, 5, 6, 8, 10, 12, 14, 16])      # word lengths [bins]
+    L_fit = (6, 14)                 # range fitted for the 1/L -> 0 intercept
+
+    dc, rms_stim, f_cut, rms_trial = 1.5, 1.0, 40.0, 0.15
+
+    t_long = 200 * 1000.0           # [ms] single long trial, for total entropy
+    t_trial = 16 * 1000.0           # [ms] frozen stimulus, repeated
+    n_trials = 128                  # enough that the shift control is near zero
+
+    # --- one long trial: total entropy ---
+    # The per-trial noise is present here too: the total entropy has to be the
+    # entropy of the responses the cell actually produces, noise included.
+    I_long = (filtered_noise(t_long, dt, rms_stim, dc, f_cut, rng=rng)[0]
+              + filtered_noise(t_long, dt, rms_trial, 0.0, f_cut, rng=rng)[0])
+    spikes_long = lif_run(I_long, dt)[1]
+
+    bits_long, merged_long = spike_bits(spikes_long, t_long, t_bin)
+    bits_long = bits_long[:, int(t_start / t_bin):]
+    S_long = spike_entropy(bits_long, t_bin, L_list)
+
+    # --- many trials of a frozen stimulus: noise entropy ---
+    I_frozen = filtered_noise(t_trial, dt, rms_stim, dc, f_cut, rng=rng)[0]
+    spikes_by_trial = []
+    for _ in range(n_trials):
+        I_noise = filtered_noise(t_trial, dt, rms_trial, 0.0, f_cut, rng=rng)[0]
+        spikes_by_trial.append(lif_run(I_frozen + I_noise, dt)[1])
+
+    bits_tr, merged_tr = spike_bits(spikes_by_trial, t_trial, t_bin)
+    bits_tr = bits_tr[:, int(t_start / t_bin):]
+    S_tr = spike_entropy(bits_tr, t_bin, L_list)
+
+    # The control: the same trials with the time-locking shifted away, where
+    # the true information is zero. What comes back is the estimator's floor.
+    S_ctrl = spike_entropy(shift_trials(bits_tr, rng), t_bin, L_list)
+    floor = S_ctrl.info
+
+    print(f"long run : {t_long/1000:g} s, 1 trial, {S_long.rate:.2f} Hz, "
+          f"{merged_long} merged spikes")
+    print(f"frozen   : {t_trial/1000:g} s x {n_trials} trials, "
+          f"{S_tr.rate:.2f} Hz, {merged_tr} merged spikes")
+    gap = 100 * abs(S_long.H_total[0] - S_tr.H_total[0]) / S_tr.H_total[0]
+    print(f"total entropy from the two runs agrees to {gap:.1f}% at "
+          f"L = {L_list[0]} ({S_long.H_total[0]:.1f} vs {S_tr.H_total[0]:.1f} bits/s)")
+
+    print("\n  L   1/L   H_total  H_noise     info    floor   bits/spike  words seen")
+    for m, L in enumerate(L_list):
+        print(f"{L:3d}  {1/L:.3f}  {S_tr.H_total[m]:7.1f}  {S_tr.H_noise[m]:7.1f}  "
+              f"{S_tr.info[m]:7.1f}  {floor[m]:7.1f}   "
+              f"{S_tr.info[m]/S_tr.rate:8.2f}   {S_tr.n_seen[m]:6d}/{2**L}")
+
+    # --- extrapolate each entropy rate to 1/L -> 0 ---
+    x = 1.0 / L_list
+    fit = (L_list >= L_fit[0]) & (L_list <= L_fit[1])
+    c_t = np.polyfit(x[fit], S_tr.H_total[fit], 1)
+    c_n = np.polyfit(x[fit], S_tr.H_noise[fit], 1)
+    c_l = np.polyfit(x[fit], S_long.H_total[fit], 1)
+    H_total_inf, H_noise_inf = c_t[1], c_n[1]
+    info_inf = H_total_inf - H_noise_inf
+
+    print(f"\nextrapolated to 1/L -> 0 over L = {L_fit[0]}..{L_fit[1]}:")
+    print(f"  total entropy {H_total_inf:6.1f} bits/s  ({c_l[1]:.1f} from the long run)")
+    print(f"  noise entropy {H_noise_inf:6.1f} bits/s")
+    print(f"  information   {info_inf:6.1f} bits/s = "
+          f"{info_inf/S_tr.rate:.2f} bits/spike at {S_tr.rate:.1f} Hz")
+
+    # --- figure ---
+    xf = np.array([0.0, x.max()])
+    fig, ax = plt.subplots(1, 2, figsize=(11, 4.5))
+
+    ax[0].plot(x, S_tr.H_total, "o-", label="total (frozen trials)")
+    ax[0].plot(x, S_long.H_total, "s--", label="total (one long trial)")
+    ax[0].plot(x, S_tr.H_noise, "o-", label="noise")
+    ax[0].plot(xf, np.polyval(c_t, xf), "k:")
+    ax[0].plot(xf, np.polyval(c_n, xf), "k:")
+    ax[0].plot([0, 0], [H_total_inf, H_noise_inf], "k*", ms=9)
+    ax[0].set_xlabel("1 / word length")
+    ax[0].set_ylabel("Entropy rate (bits/s)")
+    ax[0].set_title(f"Entropy vs. word length ({n_trials} trials, {t_bin:g} ms bins)")
+    ax[0].legend(loc="center right")
+
+    ax[1].plot(x, S_tr.info, "o-", label="information")
+    ax[1].plot(x, floor, "x-", label="shift control (floor)")
+    ax[1].plot(xf, np.polyval(c_t - c_n, xf), "k:")
+    ax[1].plot(0, info_inf, "k*", ms=9)
+    ax[1].annotate(f"{info_inf:.0f} bits/s\n{info_inf/S_tr.rate:.2f} bits/spike",
+                   (0, info_inf), textcoords="offset points", xytext=(10, -14))
+    ax[1].set_xlabel("1 / word length")
+    ax[1].set_ylabel("Information rate (bits/s)")
+    ax[1].set_title("Total minus noise")
+    ax[1].set_ylim(-0.06 * info_inf, 1.2 * info_inf)
+    ax[1].legend(loc="center right")
+
+    for a in ax:
+        a.set_xlim(*xf)
+        a.grid(alpha=0.3)
+    save(fig, "information.png")
+
+
 if __name__ == "__main__":
     os.makedirs(FIGDIR, exist_ok=True)
     for step in (dc_step, fI_curve, dt_convergence, frozen_noise_raster,
-                 jitter_reliability):
+                 jitter_reliability, information):
         print(f"\n--- {step.__name__} ---")
         step()
