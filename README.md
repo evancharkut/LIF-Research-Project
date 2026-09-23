@@ -229,6 +229,59 @@ Working from `intandfire_strong.m`, besides the pooling described above:
 - the entropy was divided by the firing rate to get bits per spike. Both units
   are reported here, since bits/s is what the `1/L` extrapolation is linear in.
 
+## Information vs. leak, averaged over stimuli
+
+`lif_info_vs_leak` (and `python/info_vs_leak.py`) puts the two halves together:
+jitter, reliability and information from the same rasters, across the same leak
+values as `lif_jitter_reliability`, and averaged over **10 independent frozen
+stimuli x 100 trials** each, 10 s analysed per trial. Two things differ from the
+10-trial sweep:
+
+- every leak value sees the *same* 10 stimuli and the *same* per-trial noise, so
+  a difference between two leak values is the leak and not the input;
+- every number is a mean over stimuli with a standard error across them.
+
+The stimulus is the jitter sweep's (5 nA rms signal at 100 Hz, 1 nA rms noise at
+20 Hz), information uses 1 ms words fitted over `L = 6..14`.
+
+![information vs leak](figures/info_vs_leak.png)
+
+The same results are also drawn as two slide-sized figures in large type,
+`figures/slide_leak_tradeoff.png` (jitter and rate) and
+`figures/slide_leak_information.png` (bits/s and bits/spike);
+`python3 python/info_vs_leak.py --replot` redraws all three from the saved
+`figures/info_vs_leak.npz` without rerunning the simulations.
+
+| leak | tau (ms) | rate (Hz) | jitter (ms) | reliability | information (bits/s) | bits/spike |
+|---|---|---|---|---|---|---|
+| 1 | 10.0 | 30.9 ± 0.2 | 0.914 ± 0.005 | 0.85 | 112 ± 1 | 3.6 |
+| 2 | 5.0 | 29.0 ± 0.3 | 0.748 ± 0.005 | 0.89 | **117 ± 1** | 4.1 |
+| 3 | 3.3 | 23.3 ± 0.3 | 0.641 ± 0.004 | 0.89 | 105 ± 1 | 4.5 |
+| 4 | 2.5 | 16.9 ± 0.2 | 0.572 ± 0.005 | 0.88 | 85 ± 1 | 5.1 |
+| 6 | 1.7 | 6.6 ± 0.2 | 0.485 ± 0.004 | 0.85 | 42 ± 1 | 6.4 |
+| 8 | 1.25 | 1.7 ± 0.1 | 0.418 ± 0.008 | 0.85 | 14 ± 0.4 | 8.2 |
+
+More leak buys precision at the cost of rate. Jitter falls by more than half
+while reliability hardly moves, but the cell fires less, and information per
+second is the product of the two effects: it **peaks at twice the default leak**,
+about 5% above the default cell, and then falls as the cell goes quiet.
+Information per spike rises the whole way.
+
+What holds up and what does not:
+
+- **The peak at leak = 2 is robust.** It appears in all 10 stimuli individually,
+  for every fit range from `L = 4..10` to `8..16`, and with or without the shift
+  floor subtracted.
+- **The high-leak values are soft.** At leak >= 6 the shift floor no longer grows
+  with `L`; it sits at 4-5 bits/s at every word length, which the `1/L`
+  extrapolation cannot remove. That is 10-30% of the signal there, so bits/spike
+  at leak 8 lies somewhere between about 6 (floor subtracted) and 8.2. The trend
+  is certain; the numbers at the quiet end are not.
+- **The 10-trial jitter was too low.** With 10 trials the event finder splits a
+  broad event into several narrow ones, so jitter at leak = 1 comes out 0.62 ms
+  on these rasters; with 30 or 100 trials it is 0.91 ms and stable. The old
+  sweep's trend is right, but its absolute jitter is biased low.
+
 ## Files
 
 | file | what it does |
@@ -245,6 +298,7 @@ Working from `intandfire_strong.m`, besides the pooling described above:
 | `spike_entropy.m` | total and noise entropy of those words, with the finite-sample correction |
 | `shift_trials.m` | the shuffle control: destroys time-locking, so the information left over is the estimator's floor |
 | `lif_information.m` | total entropy, noise entropy and information vs. word length |
+| `lif_info_vs_leak.m` | jitter, reliability and information vs. leak, averaged over 10 stimuli x 100 trials |
 | `make_figures.m` | regenerates the figures in `figures/` |
 | `check_setup.m` | preflight: shadowed built-ins, toolbox, duplicate files on the path |
 | `check_entropy.m` | checks the entropy estimator against trains whose answer is known |
@@ -262,6 +316,7 @@ lif_dc              % step response
 lif_fI_curve        % validation against theory
 lif_filtered_noise  % frozen-noise raster
 lif_jitter_reliability  % jitter/reliability vs. leak
+lif_info_vs_leak    % information vs. leak, many stimuli (several min)
 check_entropy       % validate the entropy estimator
 lif_information     % total entropy, noise entropy, information (~1 min)
 make_figures        % regenerate figures/
