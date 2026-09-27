@@ -280,9 +280,13 @@ What holds up and what does not:
   at leak 8 lies somewhere between about 6 (floor subtracted) and 8.2. The trend
   is certain; the numbers at the quiet end are not.
 - **The 10-trial jitter was too low.** With 10 trials the event finder splits a
-  broad event into several narrow ones, so jitter at leak = 1 comes out 0.62 ms
-  on these rasters; with 30 or 100 trials it is 0.91 ms and stable. The old
-  sweep's trend is right, but its absolute jitter is biased low.
+  broad event into several narrow ones, so jitter at leak = 1 comes out 0.61 ms
+  on these rasters; by 30 trials it is 0.90 ms, and from there to 100 it stays
+  between 0.90 and 0.94 ms. The old sweep's trend is right, but its absolute
+  jitter is biased low. `python/jitter_vs_trials.py` measures this and draws
+  `figures/slide_jitter_vs_trials.png`: an example where the broad event breaks
+  into pieces below the 50% reliability cut, so only the tight events are
+  averaged, next to jitter vs. the number of trials.
 
 ## Files
 
