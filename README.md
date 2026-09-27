@@ -246,10 +246,12 @@ The stimulus is the jitter sweep's (5 nA rms signal at 100 Hz, 1 nA rms noise at
 
 ![information vs leak](figures/info_vs_leak.png)
 
-The same results are also drawn as two slide-sized figures in large type,
-`figures/slide_leak_tradeoff.png` (jitter and rate) and
-`figures/slide_leak_information.png` (bits/s and bits/spike);
-`python3 python/info_vs_leak.py --replot` redraws all three from the saved
+The same results are also drawn as three slide-sized figures in large type,
+`figures/slide_leak_tradeoff.png` (jitter and rate),
+`figures/slide_leak_information.png` (bits/s and bits/spike) and
+`figures/slide_leak_reliability.png` (rate, jitter and reliability — the
+100-trial version of `jitter_reliability.png`);
+`python3 python/info_vs_leak.py --replot` redraws all four from the saved
 `figures/info_vs_leak.npz` without rerunning the simulations.
 
 | leak | tau (ms) | rate (Hz) | jitter (ms) | reliability | information (bits/s) | bits/spike |

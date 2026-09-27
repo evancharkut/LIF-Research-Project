@@ -25,9 +25,10 @@ estimator's floor is reported alongside every estimate.
     python3 python/info_vs_leak.py            # run from the repository root
     python3 python/info_vs_leak.py --replot   # redraw from the saved .npz
 
-Takes a few minutes on 8 cores. Writes figures/info_vs_leak.png, two
-slide-sized figures (slide_leak_tradeoff.png, slide_leak_information.png) and
-the per-stimulus numbers to figures/info_vs_leak.npz.
+Takes a few minutes on 8 cores. Writes figures/info_vs_leak.png, three
+slide-sized figures (slide_leak_tradeoff.png, slide_leak_information.png,
+slide_leak_reliability.png) and the per-stimulus numbers to
+figures/info_vs_leak.npz.
 """
 
 import os
@@ -228,6 +229,24 @@ def plot(R):
         ax[1].set_ylim(bottom=0)
         fig.tight_layout()
         save(fig, "slide_leak_information.png")
+
+        # the 100-trial version of jitter_reliability.png: reliability holds
+        # while jitter falls, so the precision is not bought by dropping spikes
+        fig, ax = plt.subplots(1, 3, figsize=(15, 4.9))
+        panel(ax[0], R, "rate", "Firing rate (Hz)")
+        ax[0].set_title("Rate")
+        panel(ax[1], R, "jitter", "Jitter (ms)")
+        ax[1].set_title("Jitter")
+        mu = panel(ax[2], R, "reliability", "Reliability")
+        ax[2].set_title(f"Reliability holds at {mu.min():.2f}-{mu.max():.2f}")
+        for a in ax:
+            a.set_ylim(bottom=0)
+        ax[2].set_ylim(0, 1)
+        fig.suptitle(f"{n_stim} frozen stimuli x {n_trials} trials, "
+                     f"{t_trial/1000 - t_start/1000:g} s each "
+                     f"({sig_rms:g} nA rms signal + {noise_rms:g} nA rms noise)")
+        fig.tight_layout()
+        save(fig, "slide_leak_reliability.png")
 
 
 if __name__ == "__main__":
