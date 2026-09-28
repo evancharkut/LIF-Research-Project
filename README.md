@@ -78,6 +78,11 @@ drifts slowly near threshold.
 
 ![frozen noise raster](figures/frozen_noise_raster.png)
 
+`figures/slide_frozen_noise_raster.png` is the slide version, drawn by
+`python/raster_slide.py` on the stimulus the leak sweep uses (5 nA rms signal,
+1 nA rms per-trial noise, 100 trials) rather than this one, and half a second
+well past the start-up transient.
+
 ## Jitter and reliability
 
 Spikes pooled across trials are grouped into **events**: a peri-stimulus time
